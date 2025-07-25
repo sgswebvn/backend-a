@@ -134,7 +134,7 @@ class AuthController {
             const redirectUri = `${process.env.SERVER_URL}/api/auth/facebook/callback`;
 
             // 🟢 1. Exchange code for access token
-            const tokenResponse = await axios.get('https://graph.facebook.com/v18.0/oauth/access_token', {
+            const tokenResponse = await axios.get('https://graph.facebook.com/v23.0/oauth/access_token', {
                 params: {
                     client_id: process.env.FB_APP_ID,
                     client_secret: process.env.FB_APP_SECRET,
@@ -177,7 +177,7 @@ class AuthController {
         try {
             const redirectUri = `${process.env.SERVER_URL}/api/auth/facebook/callback`;
 
-            const fbOAuthUrl = `https://www.facebook.com/v18.0/dialog/oauth?` +
+            const fbOAuthUrl = `https://www.facebook.com/v23.0/dialog/oauth?` +
                 `client_id=${process.env.FB_APP_ID}` +
                 `&redirect_uri=${encodeURIComponent(redirectUri)}` +
                 `&scope=email,public_profile`;

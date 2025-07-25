@@ -17,6 +17,7 @@ import commentRoutes from './routes/comment.routes';
 import messageRoutes from './routes/message.routes';
 import packageRoutes from './routes/package.routes';
 import paymentRoutes from './routes/payment.routes';
+import { createWebhookRouter } from './routes/webhook.routes';
 
 // Load env vars
 dotenv.config();
@@ -55,8 +56,7 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/payments', paymentRoutes);
 
-app.post('/api/webhook', webhookController.handleWebhook.bind(webhookController));
-app.get('/api/webhook', WebhookController.verifyWebhook);
+app.use('/api/webhook', createWebhookRouter(io));
 
 // Error handler
 app.use(errorHandler);

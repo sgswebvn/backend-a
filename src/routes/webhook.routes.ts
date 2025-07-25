@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { WebhookController } from '../controllers/webhook.controller';
+import { Server } from 'socket.io';
 
-const router = Router();
+export const createWebhookRouter = (io: Server) => {
+    const router = Router();
+    const webhookController = new WebhookController(io);
 
-router.post('/', WebhookController.handleWebhook);
-router.get('/', WebhookController.verifyWebhook);
+    router.post('/', webhookController.handleWebhook.bind(webhookController));
+    router.get('/', WebhookController.verifyWebhook);
 
-export default router;
+    return router;
+};
