@@ -9,6 +9,9 @@ export interface IUser extends Document {
     role: 'user' | 'admin';
     facebookToken?: string;
     facebookId?: string;
+    facebookName?: string;
+    facebookEmail?: string;
+    facebookAvatar?: string;
     packageId?: Schema.Types.ObjectId;
     packageExpiry?: Date;
     comparePassword(password: string): Promise<boolean>;

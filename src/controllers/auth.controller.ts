@@ -159,25 +159,57 @@ class AuthController {
             const userId = req.user?.id;
             if (!userId) throw new AppError('Unauthorized', 401);
 
-            await User.findByIdAndUpdate(userId, {
-                facebookId,
-                facebookToken: accessToken,
-                facebookName: name,
-                facebookEmail: email,
-                facebookAvatar: picture?.data?.url,
+            const user = await User.findByIdAndUpdate(
+                userId,
+                {
+                    facebookId,
+                    facebookToken: accessToken,
+                    facebookName: name,
+                    facebookEmail: email,
+                    facebookAvatar: picture?.data?.url,
+                },
+                { new: true }
+            );
+
+            if (!user) throw new AppError('User not found', 404);
+
+            // Generate new token
+            const token = generateToken({
+                id: user._id.toString(),
+                role: user.role,
             });
 
-            res.redirect(process.env.CLIENT_URL + '/dashboard');
+            res.status(200).json({
+                status: 'success',
+                data: {
+                    user: {
+                        id: user._id,
+                        email: user.email,
+                        name: user.name,
+                        role: user.role,
+                        facebookId: user.facebookId,
+                        facebookName: user.facebookName,
+                        facebookEmail: user.facebookEmail,
+                        facebookAvatar: user.facebookAvatar,
+                    },
+                    token,
+                },
+            });
         } catch (error) {
-            console.error("Facebook Callback Error:", error);
+            console.error('Facebook Callback Error:', error);
             next(error);
         }
-    };
+    }
+
+    // @desc    Redirect to Facebook OAuth
+    // @route   GET /api/auth/facebook/login
+    // @access  Public
     async facebookLogin(req: Request, res: Response, next: NextFunction) {
         try {
             const redirectUri = `${process.env.SERVER_URL}/api/auth/facebook/callback`;
 
-            const fbOAuthUrl = `https://www.facebook.com/v23.0/dialog/oauth?` +
+            const fbOAuthUrl =
+                `https://www.facebook.com/v23.0/dialog/oauth?` +
                 `client_id=${process.env.FB_APP_ID}` +
                 `&redirect_uri=${encodeURIComponent(redirectUri)}` +
                 `&scope=email,public_profile`;
