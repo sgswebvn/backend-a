@@ -1,3 +1,13 @@
+git pull origin
+npm run build 
+pm2 restart backend-a
+
+
+git add .
+git commit -m "upload"
+git push origin
+
+
 # Facebook Fanpage Management System
 
 ## Tính năng chính:
