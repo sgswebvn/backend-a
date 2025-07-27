@@ -212,7 +212,7 @@ class AuthController {
                 `https://www.facebook.com/v23.0/dialog/oauth?` +
                 `client_id=${process.env.FB_APP_ID}` +
                 `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-                `&scope=email,public_profile`;
+                `&scope=email,public_profile,pages_show_list,pages_read_engagement`;
 
             res.redirect(fbOAuthUrl);
         } catch (err) {
