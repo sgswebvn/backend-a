@@ -5,6 +5,7 @@ import { Package } from '../models/package.model';
 import { User } from '../models/user.model';
 import { AppError } from '../utils/error.util';
 import { PayOSService } from '../services/payos.service';
+import nodemailer from 'nodemailer';
 
 class PaymentController {
     // @desc    Create payment for package
@@ -105,7 +106,7 @@ class PaymentController {
             payment.status = status === 'success' ? 'completed' : 'failed';
             await payment.save();
 
-            // If payment successful, update user's package
+            // If payment successful, update user's package and send email
             if (status === 'success') {
                 const package_ = await Package.findById(payment.packageId);
                 if (!package_) {
@@ -113,12 +114,35 @@ class PaymentController {
                 }
 
                 // Update user's package and expiry
-                await User.findByIdAndUpdate(payment.userId, {
-                    packageId: package_._id,
-                    packageExpiry: new Date(
-                        Date.now() + package_.duration * 24 * 60 * 60 * 1000
-                    )
-                });
+                const user = await User.findById(payment.userId);
+                if (user) {
+                    await User.findByIdAndUpdate(payment.userId, {
+                        packageId: package_._id,
+                        packageExpiry: new Date(
+                            Date.now() + package_.duration * 24 * 60 * 60 * 1000
+                        )
+                    });
+
+                    // Configure Nodemailer
+                    const transporter = nodemailer.createTransport({
+                        service: 'gmail',
+                        auth: {
+                            user: process.env.EMAIL_USER, // Thêm vào .env
+                            pass: process.env.EMAIL_PASS  // Thêm vào .env
+                        }
+                    });
+
+                    // Email options
+                    const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: user.email,
+                        subject: 'Payment Successful - Package Activation',
+                        text: `Dear ${user.name},\n\nYour payment of $${amount} for the ${package_.name} package has been successfully processed. Your package is now active until ${new Date(Date.now() + package_.duration * 24 * 60 * 60 * 1000).toDateString()}.\n\nThank you for using our service!\nBest regards,\nMuti Facebook Pro Team`
+                    };
+
+                    // Send email
+                    await transporter.sendMail(mailOptions);
+                }
             }
 
             res.status(200).json({

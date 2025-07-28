@@ -20,19 +20,28 @@ export class NotificationService {
         title: string;
         content: string;
         relatedId?: string;
+        userPreferences?: { types: INotification['type'][] }; // Thêm tùy chọn lọc
     }) {
         try {
+            const user = await User.findById(data.userId);
+            if (!user) return;
+
+            // Kiểm tra tùy chọn lọc thông báo
+            if (data.userPreferences && !data.userPreferences.types.includes(data.type)) {
+                return; // Bỏ qua nếu loại thông báo không được phép
+            }
+
             const notificationCount = await Notification.countDocuments({ userId: data.userId });
-            if (notificationCount >= 100) {
+            if (notificationCount >= 500) { // Tăng giới hạn lên 500
                 await Notification.find({ userId: data.userId })
                     .sort({ createdAt: 1 })
-                    .limit(notificationCount - 90)
+                    .limit(notificationCount - 450)
                     .deleteMany();
             }
 
             const notification = await Notification.create({
                 ...data,
-                userId: data.userId.toString() // Chuyển ObjectId thành string
+                userId: data.userId.toString()
             });
             const userSocket = this.userSockets.get(data.userId.toString());
             if (userSocket) {

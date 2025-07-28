@@ -195,6 +195,27 @@ class UserController {
             next(error);
         }
     }
+    async updateNotificationPreferences(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const { types } = req.body;
+            const user = await User.findByIdAndUpdate(
+                req.user?.id,
+                { notificationPreferences: { types } },
+                { new: true, runValidators: true }
+            ).select('-password');
+
+            if (!user) {
+                throw new AppError('User not found', 404);
+            }
+
+            res.status(200).json({
+                status: 'success',
+                data: { user }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 export default new UserController();

@@ -19,6 +19,8 @@ import packageRoutes from './routes/package.routes';
 import paymentRoutes from './routes/payment.routes';
 import { createWebhookRouter } from './routes/webhook.routes';
 
+import refreshUserTokens from './scripts/refreshToken';
+
 // Load env vars
 dotenv.config();
 
@@ -69,6 +71,7 @@ app.use(errorHandler);
 
 // Connect to MongoDB
 connectDB();
+refreshUserTokens();
 
 // Start server
 const PORT = process.env.PORT || 5000;

@@ -150,6 +150,24 @@ export class FacebookService {
             throw error;
         }
     }
+    static async refreshUserAccessToken(userAccessToken: string) {
+        try {
+            const response = await axios.get(`https://graph.facebook.com/oauth/access_token`, {
+                params: {
+                    grant_type: 'fb_exchange_token',
+                    client_id: process.env.FB_APP_ID,
+                    client_secret: process.env.FB_APP_SECRET,
+                    fb_exchange_token: userAccessToken
+                }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new AppError(
+                error.response?.data?.error?.message || 'Failed to refresh user access token',
+                error.response?.status || 500
+            );
+        }
+    }
 
     private static async syncMessages(pageId: string, accessToken: string) {
         try {

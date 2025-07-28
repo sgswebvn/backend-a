@@ -14,5 +14,5 @@ router.get('/', UserController.getUsers);
 router.get('/:id', UserController.getUser);
 router.put('/:id', UserController.updateUser);
 router.delete('/:id', UserController.deleteUser);
-
+router.put('/notification-preferences', UserController.updateNotificationPreferences);
 export default router;

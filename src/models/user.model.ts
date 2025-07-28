@@ -14,7 +14,9 @@ export interface IUser extends Document {
     facebookAvatar?: string;
     packageId?: Schema.Types.ObjectId;
     packageExpiry?: Date;
+    updatedAt: Date;
     comparePassword(password: string): Promise<boolean>;
+    notificationPreferences?: { types: ('message' | 'comment' | 'payment' | 'package_expiry')[] };
 }
 
 const userSchema = new Schema<IUser>(
@@ -46,7 +48,16 @@ const userSchema = new Schema<IUser>(
             type: Schema.Types.ObjectId,
             ref: 'Package'
         },
-        packageExpiry: Date
+        packageExpiry: Date,
+        notificationPreferences: {
+            type: {
+                types: [{
+                    type: String,
+                    enum: ['message', 'comment', 'payment', 'package_expiry']
+                }]
+            },
+            default: ['message', 'comment', 'payment', 'package_expiry']
+        }
     },
     {
         timestamps: true
