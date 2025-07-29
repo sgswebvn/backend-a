@@ -3,9 +3,8 @@ import { User, IUser } from '../models/user.model';
 import { AppError } from '../utils/error.util';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { generateToken } from '../utils/jwt.util';
-import axios from 'axios';
-import jwt, { verify } from 'jsonwebtoken';
-
+import axios, { AxiosError } from 'axios';
+import jwt, { VerifyErrors } from 'jsonwebtoken';
 class AuthController {
     // @desc    Register user
     // @route   POST /api/auth/register
@@ -121,12 +120,6 @@ class AuthController {
         }
     }
 
-    // @desc    Connect Facebook account
-    // @route   GET /api/auth/facebook/callback
-    // @access  Private
-    // @desc    Connect Facebook account
-    // @route   GET /api/auth/facebook/callback
-    // @access  Private
     async facebookCallback(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { code, state } = req.query;
@@ -135,7 +128,6 @@ class AuthController {
                 throw new AppError('No authorization code or state provided', 400);
             }
 
-            // Xác thực token từ state
             const token = decodeURIComponent(state as string);
             console.log('Facebook callback token:', token);
 
@@ -144,10 +136,12 @@ class AuthController {
                 decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string; role: string };
                 console.log('Token verified successfully:', decoded);
             } catch (verifyError) {
-                console.error('Token verification error:', verifyError);
+                // Kiểu hóa verifyError thành VerifyErrors hoặc Error
+                const error = verifyError as VerifyErrors | Error;
+                console.error('Token verification error:', error.message);
                 throw new AppError('Invalid or expired token', 401);
             }
-            req.user = { id: decoded.id, role: decoded.role }; // Gắn user vào request
+            req.user = { id: decoded.id, role: decoded.role };
 
             const redirectUri = `${process.env.SERVER_URL}/api/auth/facebook/callback`;
             console.log('Exchanging code for access token with redirectUri:', redirectUri);
@@ -159,6 +153,11 @@ class AuthController {
                     redirect_uri: redirectUri,
                     code,
                 },
+            }).catch((error) => {
+                // Kiểu hóa error thành AxiosError
+                const axiosError = error as AxiosError;
+                console.error('Facebook API error:', axiosError.response?.data || axiosError.message);
+                throw axiosError;
             });
             const accessToken = tokenResponse.data.access_token;
             console.log('Facebook access token received:', accessToken);
@@ -199,7 +198,9 @@ class AuthController {
             console.log('Redirecting to:', redirectUrl);
             res.redirect(redirectUrl);
         } catch (error) {
-            console.error('Facebook Callback Error:', error);
+            // Kiểu hóa error chung
+            const err = error as Error | AxiosError;
+            console.error('Facebook Callback Error:', err.message, err.stack);
             next(error);
         }
     }
