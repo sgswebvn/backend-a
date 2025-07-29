@@ -4,7 +4,7 @@ import { AppError } from '../utils/error.util';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { generateToken } from '../utils/jwt.util';
 import axios from 'axios';
-import jwt from 'jsonwebtoken';
+import jwt, { verify } from 'jsonwebtoken';
 
 class AuthController {
     // @desc    Register user
@@ -139,16 +139,19 @@ class AuthController {
             const token = decodeURIComponent(state as string);
             console.log('Facebook callback token:', token);
 
-            const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string; role: string };
+            let decoded;
+            try {
+                decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string; role: string };
+                console.log('Token verified successfully:', decoded);
+            } catch (verifyError) {
+                console.error('Token verification error:', verifyError);
+                throw new AppError('Invalid or expired token', 401);
+            }
             req.user = { id: decoded.id, role: decoded.role }; // Gắn user vào request
 
-            if (!code) {
-                throw new AppError('No authorization code provided', 400);
-            }
-
             const redirectUri = `${process.env.SERVER_URL}/api/auth/facebook/callback`;
+            console.log('Exchanging code for access token with redirectUri:', redirectUri);
 
-            // 🟢 1. Exchange code for access token
             const tokenResponse = await axios.get('https://graph.facebook.com/v23.0/oauth/access_token', {
                 params: {
                     client_id: process.env.FB_APP_ID,
@@ -157,23 +160,22 @@ class AuthController {
                     code,
                 },
             });
-
             const accessToken = tokenResponse.data.access_token;
+            console.log('Facebook access token received:', accessToken);
 
-            // 🟢 2. Get user profile from Facebook
             const profileResponse = await axios.get('https://graph.facebook.com/me', {
                 params: {
                     fields: 'id,name,email,picture',
                     access_token: accessToken,
                 },
             });
-
             const { id: facebookId, name, email, picture } = profileResponse.data;
+            console.log('Facebook profile:', { facebookId, name, email, picture: picture?.data?.url });
 
-            // 🟢 3. Update current user (req.user) with Facebook ID + token
             const userId = req.user?.id;
             if (!userId) throw new AppError('Unauthorized', 401);
 
+            console.log('Updating user with id:', userId);
             const user = await User.findByIdAndUpdate(
                 userId,
                 {
@@ -188,17 +190,16 @@ class AuthController {
 
             if (!user) throw new AppError('User not found', 404);
 
-            // Generate new token
             const newToken = generateToken({
                 id: user._id.toString(),
                 role: user.role,
             });
 
-            // Chuyển hướng về frontend
             const redirectUrl = `${process.env.NEXT_PUBLIC_CLIENT_URL}/dashboard/fanpages?token=${encodeURIComponent(newToken)}`;
+            console.log('Redirecting to:', redirectUrl);
             res.redirect(redirectUrl);
         } catch (error) {
-            console.error('Facebook Callback Error:');
+            console.error('Facebook Callback Error:', error);
             next(error);
         }
     }
