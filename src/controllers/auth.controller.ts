@@ -208,11 +208,7 @@ class AuthController {
     // @access  Public
     async facebookLogin(req: Request, res: Response, next: NextFunction) {
         try {
-            const token = req.query.token as string; // Nhận token từ frontend
-            if (!token) {
-                throw new AppError('No authentication token provided', 401);
-            }
-
+            const token = req.query.token as string; // Nhận token từ frontend (tùy chọn)
             console.log('Facebook login token:', token); // Log token
 
             const redirectUri = `${process.env.SERVER_URL}/api/auth/facebook/callback`;
@@ -222,10 +218,11 @@ class AuthController {
                 `client_id=${process.env.FB_APP_ID}` +
                 `&redirect_uri=${encodeURIComponent(redirectUri)}` +
                 `&scope=email,public_profile,pages_show_list,pages_read_engagement` +
-                `&state=${encodeURIComponent(token)}`;
+                (token ? `&state=${encodeURIComponent(token)}` : '');
+
             res.redirect(fbOAuthUrl);
         } catch (err) {
-            console.error('Facebook login error:');
+            console.error('Facebook login error:', err);
             next(err);
         }
     }

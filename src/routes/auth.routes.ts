@@ -10,7 +10,7 @@ router.post('/login', AuthController.login);
 
 // Protected routes
 router.get('/me', authMiddleware, AuthController.getMe);
-router.get('/facebook/callback', authMiddleware, AuthController.facebookCallback);
-router.get('/facebook/login', authMiddleware, AuthController.facebookLogin);
+router.get('/facebook/callback', AuthController.facebookCallback);
+router.get('/facebook/login', AuthController.facebookLogin);
 
 export default router;
