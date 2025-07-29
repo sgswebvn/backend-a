@@ -4,6 +4,7 @@ import { AppError } from '../utils/error.util';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { generateToken } from '../utils/jwt.util';
 import axios from 'axios';
+import jwt from 'jsonwebtoken';
 
 class AuthController {
     // @desc    Register user
@@ -123,9 +124,23 @@ class AuthController {
     // @desc    Connect Facebook account
     // @route   GET /api/auth/facebook/callback
     // @access  Private
+    // @desc    Connect Facebook account
+    // @route   GET /api/auth/facebook/callback
+    // @access  Private
     async facebookCallback(req: AuthRequest, res: Response, next: NextFunction) {
         try {
-            const { code } = req.query;
+            const { code, state } = req.query;
+
+            if (!code || !state) {
+                throw new AppError('No authorization code or state provided', 400);
+            }
+
+            // Xác thực token từ state
+            const token = decodeURIComponent(state as string);
+            console.log('Facebook callback token:', token);
+
+            const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string; role: string };
+            req.user = { id: decoded.id, role: decoded.role }; // Gắn user vào request
 
             if (!code) {
                 throw new AppError('No authorization code provided', 400);
@@ -174,29 +189,16 @@ class AuthController {
             if (!user) throw new AppError('User not found', 404);
 
             // Generate new token
-            const token = generateToken({
+            const newToken = generateToken({
                 id: user._id.toString(),
                 role: user.role,
             });
 
-            res.status(200).json({
-                status: 'success',
-                data: {
-                    user: {
-                        id: user._id,
-                        email: user.email,
-                        name: user.name,
-                        role: user.role,
-                        facebookId: user.facebookId,
-                        facebookName: user.facebookName,
-                        facebookEmail: user.facebookEmail,
-                        facebookAvatar: user.facebookAvatar,
-                    },
-                    token,
-                },
-            });
+            // Chuyển hướng về frontend
+            const redirectUrl = `${process.env.NEXT_PUBLIC_CLIENT_URL}/dashboard/fanpages?token=${encodeURIComponent(newToken)}`;
+            res.redirect(redirectUrl);
         } catch (error) {
-            console.error('Facebook Callback Error:', error);
+            console.error('Facebook Callback Error:');
             next(error);
         }
     }
