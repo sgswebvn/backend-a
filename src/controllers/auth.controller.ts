@@ -11,27 +11,34 @@ class AuthController {
     // @access  Public
     async register(req: Request, res: Response, next: NextFunction) {
         try {
+            console.log('Register request received:', req.body);
             const { email, password, name } = req.body;
-
-            // Check if user exists
+            if (!email || !password || !name) {
+                throw new AppError('Please provide email, password, and name', 400);
+            }
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                throw new AppError('Invalid email format', 400);
+            }
+            if (password.length < 8) {
+                throw new AppError('Password must be at least 8 characters', 400);
+            }
+            console.log('Checking if user exists');
             const userExists = await User.findOne({ email });
             if (userExists) {
                 throw new AppError('User already exists', 400);
             }
-
-            // Create user
+            console.log('Creating user');
             const user: IUser = await User.create({
                 email,
                 password,
                 name
             });
-
-            // Generate token
+            console.log('Generating token');
             const token = generateToken({
                 id: user._id.toString(),
                 role: user.role
             });
-
             res.status(201).json({
                 status: 'success',
                 data: {
@@ -45,34 +52,39 @@ class AuthController {
                 }
             });
         } catch (error) {
+            console.error('Register error:', error);
             next(error);
         }
     }
 
-    // @desc    Login user
-    // @route   POST /api/auth/login
-    // @access  Public
     async login(req: Request, res: Response, next: NextFunction) {
         try {
+            console.log('Login request received:', req.body);
             const { email, password } = req.body;
-
-            // Check if email and password exist
             if (!email || !password) {
                 throw new AppError('Please provide email and password', 400);
             }
-
-            // Check if user exists & password is correct
-            const user: IUser | null = await User.findOne({ email }).select('+password');
-            if (!user || !(await user.comparePassword(password))) {
-                throw new AppError('Invalid credentials', 401);
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                throw new AppError('Invalid email format', 400);
             }
-
-            // Generate token
+            console.log('Checking user credentials');
+            const user: IUser | null = await User.findOne({ email }).select('+password');
+            if (!user) {
+                throw new AppError('Invalid credentials: User not found', 401);
+            }
+            if (!(await user.comparePassword(password))) {
+                throw new AppError('Invalid credentials: Incorrect password', 401);
+            }
+            if (!user.role) {
+                console.error('User missing role:', user);
+                throw new AppError('User data incomplete: Missing role', 500);
+            }
+            console.log('Generating token');
             const token = generateToken({
                 id: user._id.toString(),
                 role: user.role
             });
-
             res.status(200).json({
                 status: 'success',
                 data: {
@@ -86,6 +98,7 @@ class AuthController {
                 }
             });
         } catch (error) {
+            console.error('Login error:', error);
             next(error);
         }
     }

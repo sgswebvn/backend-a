@@ -40,7 +40,8 @@ const userSchema = new Schema<IUser>(
         role: {
             type: String,
             enum: ['user', 'admin'],
-            default: 'user'
+            default: 'user',
+            required: true
         },
         facebookToken: String,
         facebookId: String,
@@ -56,7 +57,7 @@ const userSchema = new Schema<IUser>(
                     enum: ['message', 'comment', 'payment', 'package_expiry']
                 }]
             },
-            default: ['message', 'comment', 'payment', 'package_expiry']
+            default: { types: ['message', 'comment', 'payment', 'package_expiry'] }
         }
     },
     {
@@ -64,16 +65,22 @@ const userSchema = new Schema<IUser>(
     }
 );
 
-// Encrypt password
 userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {
+        return next();
+    }
+    try {
+        console.log('Hashing password for:', this.email);
+        const salt = await bcrypt.genSalt(10);
+        this.password = await bcrypt.hash(this.password, salt);
+        console.log('Password hashed successfully');
+        next();
+    } catch (error) {
+        console.error('Password hashing error:', error);
         next();
     }
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
 });
 
-// Compare password
 userSchema.methods.comparePassword = async function (enteredPassword: string) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
