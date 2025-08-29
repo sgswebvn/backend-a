@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { AppError } from '../utils/error.util';
 import { Post } from '../models/post.model';
 import { Comment } from '../models/comment.model';
@@ -12,10 +12,50 @@ export interface Fanpage {
     picture?: string;
     category?: string;
 }
+interface FacebookPost {
+    id: string;
+    message?: string;
+    created_time: string;
+    updated_time: string;
+    full_picture?: string;
+    likes?: { summary: { total_count: number } };
+    shares?: { count: number };
+    comments?: { summary: { total_count: number } };
+}
+
+interface FacebookComment {
+    id: string;
+    message: string;
+    created_time: string;
+    from: {
+        id: string;
+        name: string;
+        picture?: { data: { url: string } };
+    };
+    parent?: { id: string };
+    is_hidden?: boolean;
+}
 export class FacebookService {
     private static readonly FB_API_VERSION = 'v23.0';
     private static readonly FB_API_URL = `https://graph.facebook.com/${FacebookService.FB_API_VERSION}`;
 
+    static async getPosts(pageId: string, accessToken: string): Promise<FacebookPost[]> {
+        try {
+            const response = await axios.get<{ data: FacebookPost[] }>(`${this.FB_API_URL}/${pageId}/posts`, {
+                params: {
+                    access_token: accessToken,
+                    fields: 'id,message,created_time,updated_time,full_picture,likes.summary(true),shares,comments.summary(true)',
+                    limit: 100,
+                },
+            });
+            return response.data.data;
+        } catch (error: any) {
+            throw new AppError(
+                error.response?.data?.error?.message || 'Failed to get posts',
+                error.response?.status || 500
+            );
+        }
+    }
     static async getPageDetails(pageId: string, userAccessToken: string) {
         try {
             const response = await axios.get(`${this.FB_API_URL}/${pageId}`, {
@@ -111,29 +151,6 @@ export class FacebookService {
             throw error;
         }
     }
-    static async hideComment(commentId: string, accessToken: string) {
-        try {
-            const response = await axios.post(
-                `${this.FB_API_URL}/${commentId}`,
-                {
-                    is_hidden: true
-                },
-                {
-                    params: {
-                        access_token: accessToken
-                    }
-                }
-            );
-
-            return response.data; // Trả về { success: true }
-        } catch (error: any) {
-            throw new AppError(
-                error.response?.data?.error?.message || 'Failed to hide comment',
-                error.response?.status || 500
-            );
-        }
-    }
-
     private static async syncComments(pageId: string, accessToken: string) {
         try {
             const response = await axios.get(`${this.FB_API_URL}/${pageId}/feed`, {
@@ -256,29 +273,6 @@ export class FacebookService {
         }
     }
 
-    static async replyToComment(commentId: string, message: string, pageAccessToken: string) {
-        try {
-            const response = await axios.post(
-                `${this.FB_API_URL}/${commentId}/comments`,
-                {
-                    message
-                },
-                {
-                    params: {
-                        access_token: pageAccessToken
-                    }
-                }
-            );
-
-            return response.data;
-        } catch (error: any) {
-            throw new AppError(
-                error.response?.data?.error?.message || 'Failed to reply to comment',
-                error.response?.status || 500
-            );
-        }
-    }
-
     static async sendMessage(conversationId: string, message: string, pageAccessToken: string) {
         try {
             const response = await axios.post(
@@ -389,6 +383,55 @@ export class FacebookService {
         } catch (error: any) {
             throw new AppError(
                 error.response?.data?.error?.message || 'Failed to delete post',
+                error.response?.status || 500
+            );
+        }
+    }
+
+    static async getComments(postId: string, accessToken: string): Promise<FacebookComment[]> {
+        try {
+            const response = await axios.get<{ data: FacebookComment[] }>(`${this.FB_API_URL}/${postId}/comments`, {
+                params: {
+                    access_token: accessToken,
+                    fields: 'id,message,created_time,from,parent,is_hidden',
+                    limit: 100,
+                },
+            });
+            return response.data.data;
+        } catch (error: any) {
+            throw new AppError(
+                error.response?.data?.error?.message || 'Failed to get comments',
+                error.response?.status || 500
+            );
+        }
+    }
+
+    static async replyToComment(commentId: string, message: string, accessToken: string): Promise<FacebookComment> {
+        try {
+            const response = await axios.post<{ id: string }>(
+                `${this.FB_API_URL}/${commentId}/comments`,
+                { message },
+                { params: { access_token: accessToken } }
+            );
+            return { id: response.data.id, message, created_time: new Date().toISOString(), from: { id: '', name: '' } };
+        } catch (error: any) {
+            throw new AppError(
+                error.response?.data?.error?.message || 'Failed to reply to comment',
+                error.response?.status || 500
+            );
+        }
+    }
+
+    static async hideComment(commentId: string, accessToken: string, isHidden: boolean): Promise<void> {
+        try {
+            await axios.post(
+                `${this.FB_API_URL}/${commentId}`,
+                { is_hidden: isHidden },
+                { params: { access_token: accessToken } }
+            );
+        } catch (error: any) {
+            throw new AppError(
+                error.response?.data?.error?.message || 'Failed to hide comment',
                 error.response?.status || 500
             );
         }

@@ -8,24 +8,46 @@ import { AppError } from '../utils/error.util';
 export class PostController {
     async getPosts(req: AuthRequest, res: Response, next: NextFunction) {
         try {
-            const { fanpageId } = req.params;
+            const { fanpageId } = req.params; // fanpageId là Facebook pageId
             const { page = 1, limit = 10 } = req.query;
 
-            // Kiểm tra quyền truy cập fanpage
+            if (!fanpageId || !/^[0-9_]+$/.test(fanpageId)) {
+                throw new AppError('Invalid fanpageId', 400);
+            }
+
             const fanpage = await Fanpage.findOne({
                 pageId: fanpageId,
                 userId: req.user?.id,
                 isConnected: true,
             });
+
             if (!fanpage) {
                 throw new AppError('Fanpage not found or not authorized', 404);
             }
 
-            // Lấy bài đăng từ database
-            const posts = await Post.find({ fanpageId: fanpage._id })
+            let posts = await Post.find({ fanpageId: fanpage._id })
                 .sort({ createdTime: -1 })
                 .skip((Number(page) - 1) * Number(limit))
                 .limit(Number(limit));
+
+            if (posts.length === 0) {
+                const fbPosts = await FacebookService.getPosts(fanpage.pageId, fanpage.accessToken);
+                const postsToInsert = fbPosts.map((fbPost) => ({
+                    postId: fbPost.id,
+                    fanpageId: fanpage._id,
+                    content: fbPost.message || '',
+                    createdTime: new Date(fbPost.created_time),
+                    updatedTime: new Date(fbPost.updated_time),
+                    likes: fbPost.likes?.summary.total_count || 0,
+                    shares: fbPost.shares?.count || 0,
+                    picture: fbPost.full_picture || '',
+                }));
+                await Post.insertMany(postsToInsert);
+                posts = await Post.find({ fanpageId: fanpage._id })
+                    .sort({ createdTime: -1 })
+                    .skip((Number(page) - 1) * Number(limit))
+                    .limit(Number(limit));
+            }
 
             const total = await Post.countDocuments({ fanpageId: fanpage._id });
 
@@ -40,41 +62,62 @@ export class PostController {
                     },
                 },
             });
-        } catch (error) {
+        } catch (error: any) {
+            console.error('Get posts error:', {
+                message: error.message,
+                stack: error.stack,
+                fanpageId: req.params.fanpageId,
+                userId: req.user?.id,
+            });
             next(error);
         }
     }
+
     async createPost(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { fanpageId, content } = req.body;
 
-            // Kiểm tra quyền truy cập fanpage
+            if (!fanpageId || !/^[0-9_]+$/.test(fanpageId)) {
+                throw new AppError('Invalid fanpageId', 400);
+            }
+
+            if (!content || typeof content !== 'string') {
+                throw new AppError('Content is required', 400);
+            }
+
             const fanpage = await Fanpage.findOne({
-                _id: fanpageId,
+                pageId: fanpageId,
                 userId: req.user?.id,
-                isConnected: true
+                isConnected: true,
             });
             if (!fanpage) {
                 throw new AppError('Fanpage not found or not authorized', 404);
             }
 
-            // Gọi Facebook API để tạo bài đăng
             const fbPost = await FacebookService.createPost(fanpage.pageId, content, fanpage.accessToken);
 
-            // Lưu bài đăng vào database
             const post = await Post.create({
                 postId: fbPost.id,
                 fanpageId: fanpage._id,
                 content,
-                createdTime: new Date(),
-                updatedTime: new Date()
+                createdTime: new Date(fbPost.created_time),
+                updatedTime: new Date(fbPost.updated_time),
+                likes: fbPost.likes?.summary.total_count || 0,
+                shares: fbPost.shares?.count || 0,
+                picture: fbPost.full_picture || '',
             });
 
             res.status(201).json({
                 status: 'success',
-                data: { post }
+                data: { post },
             });
-        } catch (error) {
+        } catch (error: any) {
+            console.error('Create post error:', {
+                message: error.message,
+                stack: error.stack,
+                fanpageId: req.body.fanpageId,
+                userId: req.user?.id,
+            });
             next(error);
         }
     }
@@ -84,35 +127,41 @@ export class PostController {
             const { postId } = req.params;
             const { content } = req.body;
 
-            // Kiểm tra bài đăng
-            const post = await Post.findOne({ _id: postId });
+            if (!postId || !/^[0-9a-fA-F]{24}$/.test(postId)) {
+                throw new AppError('Invalid postId', 400);
+            }
+
+            if (!content || typeof content !== 'string') {
+                throw new AppError('Content is required', 400);
+            }
+
+            const post = await Post.findById(postId);
             if (!post) {
                 throw new AppError('Post not found', 404);
             }
 
-            // Kiểm tra quyền truy cập fanpage
-            const fanpage = await Fanpage.findOne({
-                _id: post.fanpageId,
-                userId: req.user?.id,
-                isConnected: true
-            });
-            if (!fanpage) {
-                throw new AppError('Fanpage not found or not authorized', 404);
+            const fanpage = await Fanpage.findById(post.fanpageId);
+            if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
+                throw new AppError('Fanpage not found or not authorized', 401);
             }
 
-            // Cập nhật bài đăng qua Facebook API
             await FacebookService.updatePost(post.postId, content, fanpage.accessToken);
 
-            // Cập nhật bài đăng trong database
             post.content = content;
             post.updatedTime = new Date();
             await post.save();
 
             res.status(200).json({
                 status: 'success',
-                data: { post }
+                data: { post },
             });
-        } catch (error) {
+        } catch (error: any) {
+            console.error('Update post error:', {
+                message: error.message,
+                stack: error.stack,
+                postId: req.params.postId,
+                userId: req.user?.id,
+            });
             next(error);
         }
     }
@@ -121,33 +170,35 @@ export class PostController {
         try {
             const { postId } = req.params;
 
-            // Kiểm tra bài đăng
-            const post = await Post.findOne({ _id: postId });
+            if (!postId || !/^[0-9a-fA-F]{24}$/.test(postId)) {
+                throw new AppError('Invalid postId', 400);
+            }
+
+            const post = await Post.findById(postId);
             if (!post) {
                 throw new AppError('Post not found', 404);
             }
 
-            // Kiểm tra quyền truy cập fanpage
-            const fanpage = await Fanpage.findOne({
-                _id: post.fanpageId,
-                userId: req.user?.id,
-                isConnected: true
-            });
-            if (!fanpage) {
-                throw new AppError('Fanpage not found or not authorized', 404);
+            const fanpage = await Fanpage.findById(post.fanpageId);
+            if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
+                throw new AppError('Fanpage not found or not authorized', 401);
             }
 
-            // Xóa bài đăng qua Facebook API
             await FacebookService.deletePost(post.postId, fanpage.accessToken);
 
-            // Xóa bài đăng khỏi database
             await post.deleteOne();
 
             res.status(204).json({
                 status: 'success',
-                message: 'Post deleted successfully'
+                message: 'Post deleted successfully',
             });
-        } catch (error) {
+        } catch (error: any) {
+            console.error('Delete post error:', {
+                message: error.message,
+                stack: error.stack,
+                postId: req.params.postId,
+                userId: req.user?.id,
+            });
             next(error);
         }
     }
