@@ -33,19 +33,28 @@ class CommentController {
 
             if (comments.length === 0) {
                 const fbComments = await FacebookService.getComments(post.postId, fanpage.accessToken);
-                const commentsToInsert = fbComments.map((fbComment) => ({
-                    commentId: fbComment.id,
-                    postId: post._id,
-                    fanpageId: fanpage._id,
-                    parentId: fbComment.parent?.id,
-                    fromId: fbComment.from.id,
-                    fromName: fbComment.from.name,
-                    fromAvatar: fbComment.from.picture?.data?.url || '',
-                    message: fbComment.message || '',
-                    createdTime: new Date(fbComment.created_time),
-                    isHidden: fbComment.is_hidden || false,
+                const bulkOps = fbComments.map((fbComment: { id: string; message: string; created_time: string; from: { id: string; name: string; picture?: { data: { url: string } } }; parent?: { id: string }; is_hidden?: boolean }) => ({
+                    updateOne: {
+                        filter: { commentId: fbComment.id },
+                        update: {
+                            $set: {
+                                postId: post._id,
+                                fanpageId: fanpage._id,
+                                parentId: fbComment.parent?.id,
+                                fromId: fbComment.from.id,
+                                fromName: fbComment.from.name,
+                                fromAvatar: fbComment.from.picture?.data?.url || '',
+                                message: fbComment.message,
+                                createdTime: new Date(fbComment.created_time),
+                                isHidden: fbComment.is_hidden || false,
+                            },
+                        },
+                        upsert: true,
+                    },
                 }));
-                await Comment.insertMany(commentsToInsert);
+                if (bulkOps.length > 0) {
+                    await Comment.bulkWrite(bulkOps);
+                }
                 comments = await Comment.find({ postId: post._id })
                     .sort({ createdTime: -1 })
                     .skip((Number(page) - 1) * Number(limit))
@@ -59,7 +68,7 @@ class CommentController {
                 data: {
                     comments: comments.map((comment) => ({
                         ...comment.toObject(),
-                        fromAvatar: comment.fromId === fanpage.pageId ? fanpage.pictureUrl : comment.fromAvatar,
+                        fromAvatar: comment.fromId === fanpage.pageId ? fanpage.pictureUrl : comment.fromAvatar || '',
                     })),
                     pagination: {
                         page: Number(page),
@@ -84,7 +93,7 @@ class CommentController {
             const { commentId } = req.params;
             const { message } = req.body;
 
-            if (!commentId || !/^[0-9a-fA-F]{24}$/.test(commentId)) {
+            if (!commentId || !/^[0-9_]+$/.test(commentId)) {
                 throw new AppError('Invalid commentId', 400);
             }
 
@@ -92,7 +101,7 @@ class CommentController {
                 throw new AppError('Message is required', 400);
             }
 
-            const comment = await Comment.findById(commentId);
+            const comment = await Comment.findOne({ commentId });
             if (!comment) {
                 throw new AppError('Comment not found', 404);
             }
@@ -143,7 +152,7 @@ class CommentController {
             const { commentId } = req.params;
             const { hidden } = req.body;
 
-            if (!commentId || !/^[0-9a-fA-F]{24}$/.test(commentId)) {
+            if (!commentId || !/^[0-9_]+$/.test(commentId)) {
                 throw new AppError('Invalid commentId', 400);
             }
 
@@ -151,7 +160,7 @@ class CommentController {
                 throw new AppError('Hidden must be a boolean', 400);
             }
 
-            const comment = await Comment.findById(commentId);
+            const comment = await Comment.findOne({ commentId });
             if (!comment) {
                 throw new AppError('Comment not found', 404);
             }
