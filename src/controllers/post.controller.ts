@@ -13,7 +13,7 @@ export class PostController {
 
             // Kiểm tra quyền truy cập fanpage
             const fanpage = await Fanpage.findOne({
-                _id: fanpageId,
+                pageId: fanpageId,
                 userId: req.user?.id,
                 isConnected: true,
             });
@@ -22,12 +22,12 @@ export class PostController {
             }
 
             // Lấy bài đăng từ database
-            const posts = await Post.find({ fanpageId })
+            const posts = await Post.find({ fanpageId: fanpage._id })
                 .sort({ createdTime: -1 })
                 .skip((Number(page) - 1) * Number(limit))
                 .limit(Number(limit));
 
-            const total = await Post.countDocuments({ fanpageId });
+            const total = await Post.countDocuments({ fanpageId: fanpage._id });
 
             res.status(200).json({
                 status: 'success',
