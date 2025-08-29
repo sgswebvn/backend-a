@@ -1,3 +1,4 @@
+// src/controllers/message.controller.ts
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { Message } from '../models/message.model';
@@ -17,7 +18,7 @@ class MessageController {
             // Find fanpage and check ownership
             const fanpage = await Fanpage.findOne({
                 userId: req.user?.id,
-                'conversations.id': conversationId
+                'conversations.id': conversationId,
             });
 
             if (!fanpage) {
@@ -39,9 +40,9 @@ class MessageController {
                     pagination: {
                         page: Number(page),
                         limit: Number(limit),
-                        total
-                    }
-                }
+                        total,
+                    },
+                },
             });
         } catch (error) {
             next(error);
@@ -59,7 +60,7 @@ class MessageController {
             // Find fanpage and check ownership
             const fanpage = await Fanpage.findOne({
                 userId: req.user?.id,
-                'conversations.id': conversationId
+                'conversations.id': conversationId,
             });
 
             if (!fanpage) {
@@ -70,7 +71,7 @@ class MessageController {
             const response = await FacebookService.sendMessage(
                 conversationId,
                 message,
-                fanpage.accessToken
+                fanpage.accessToken,
             );
 
             // Save message to database
@@ -82,14 +83,109 @@ class MessageController {
                 fromName: fanpage.name,
                 message,
                 attachments,
-                createdTime: new Date()
+                createdTime: new Date(),
             });
 
             res.status(201).json({
                 status: 'success',
                 data: {
-                    message: newMessage
-                }
+                    message: newMessage,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // @desc    Reply to a message
+    // @route   POST /api/messages/reply
+    // @access  Private
+    async replyMessage(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const { pageId, recipientId, message } = req.body;
+
+            // Find fanpage and check ownership
+            const fanpage = await Fanpage.findOne({
+                pageId,
+                userId: req.user?.id,
+                isConnected: true,
+            });
+
+            if (!fanpage) {
+                throw new AppError('Fanpage not found or not authorized', 404);
+            }
+
+            // Send message through Facebook
+            const response = await FacebookService.sendMessage(recipientId, message, fanpage.accessToken);
+
+            // Save message to database
+            const newMessage = await Message.create({
+                messageId: response.message_id,
+                fanpageId: fanpage._id,
+                conversationId: recipientId,
+                fromId: fanpage.pageId,
+                fromName: fanpage.name,
+                message,
+                createdTime: new Date(),
+            });
+
+            res.status(201).json({
+                status: 'success',
+                data: {
+                    message: newMessage,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // @desc    Follow/unfollow a message
+    // @route   POST /api/messages/:msgId/follow
+    // @access  Private
+    async followMessage(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const { msgId } = req.params;
+            const { pageId, followed } = req.body;
+
+            // Find fanpage and check ownership
+            const fanpage = await Fanpage.findOne({
+                pageId,
+                userId: req.user?.id,
+                isConnected: true,
+            });
+
+            if (!fanpage) {
+                throw new AppError('Fanpage not found or not authorized', 404);
+            }
+
+            // Find and update message
+            const message = await Message.findOne({
+                _id: msgId,
+                fanpageId: fanpage._id,
+            });
+
+            if (!message) {
+                throw new AppError('Message not found', 404);
+            }
+
+            message.followed = followed;
+            await message.save();
+
+            // Emit socket event
+            const io = (req as any).io; // Giả định io được gắn vào req từ middleware
+            if (io) {
+                io.to(`user_${req.user?.id}`).emit('fb_message_followed', {
+                    messageId: msgId,
+                    followed,
+                });
+            }
+
+            res.status(200).json({
+                status: 'success',
+                data: {
+                    message,
+                },
             });
         } catch (error) {
             next(error);

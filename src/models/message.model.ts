@@ -13,6 +13,7 @@ export interface IMessage extends Document {
         url: string;
     }[];
     createdTime: Date;
+    followed?: boolean;
 }
 
 const messageSchema = new Schema<IMessage>(
@@ -49,6 +50,10 @@ const messageSchema = new Schema<IMessage>(
                 url: String
             }
         ],
+        followed: {
+            type: Boolean,
+            default: false
+        },
         createdTime: {
             type: Date,
             required: true
@@ -57,6 +62,7 @@ const messageSchema = new Schema<IMessage>(
     {
         timestamps: true
     }
+
 );
 
 // Index for faster queries

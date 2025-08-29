@@ -6,6 +6,44 @@ import { FacebookService } from '../services/facebook.service';
 import { AppError } from '../utils/error.util';
 
 export class PostController {
+    async getPosts(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const { fanpageId } = req.params;
+            const { page = 1, limit = 10 } = req.query;
+
+            // Kiểm tra quyền truy cập fanpage
+            const fanpage = await Fanpage.findOne({
+                _id: fanpageId,
+                userId: req.user?.id,
+                isConnected: true,
+            });
+            if (!fanpage) {
+                throw new AppError('Fanpage not found or not authorized', 404);
+            }
+
+            // Lấy bài đăng từ database
+            const posts = await Post.find({ fanpageId })
+                .sort({ createdTime: -1 })
+                .skip((Number(page) - 1) * Number(limit))
+                .limit(Number(limit));
+
+            const total = await Post.countDocuments({ fanpageId });
+
+            res.status(200).json({
+                status: 'success',
+                data: {
+                    posts,
+                    pagination: {
+                        page: Number(page),
+                        limit: Number(limit),
+                        total,
+                    },
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
     async createPost(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { fanpageId, content } = req.body;

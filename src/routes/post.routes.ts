@@ -5,7 +5,7 @@ import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
 const postController = new PostController();
-
+router.get('/:fanpageId', authMiddleware, postController.getPosts.bind(postController));
 router.post(
     '/:fanpageId',
     authMiddleware,
