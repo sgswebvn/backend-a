@@ -22,6 +22,9 @@ interface FacebookPost {
     shares?: { count: number };
     comments?: { summary: { total_count: number } };
 }
+interface FacebookMessage {
+    message_id: string;
+}
 
 interface FacebookComment {
     id: string;
@@ -273,25 +276,17 @@ export class FacebookService {
         }
     }
 
-    static async sendMessage(conversationId: string, message: string, pageAccessToken: string) {
+    static async sendMessage(recipientId: string, message: string, accessToken: string): Promise<FacebookMessage> {
         try {
-            const response = await axios.post(
-                `${this.FB_API_URL}/me/messages`,
-                {
-                    recipient: { id: conversationId },
-                    message: { text: message }
-                },
-                {
-                    params: {
-                        access_token: pageAccessToken
-                    }
-                }
+            const response = await axios.post<{ message_id: string }>(
+                `${this.FB_API_URL}/${recipientId}/messages`,
+                { message: { text: message } },
+                { params: { access_token: accessToken } }
             );
-
-            return response.data;
+            return { message_id: response.data.message_id };
         } catch (error: any) {
             throw new AppError(
-                error.response?.data?.error?.message || 'Failed to send message',
+                error.response?.data?.error?.message || 'Không thể gửi tin nhắn',
                 error.response?.status || 500
             );
         }
