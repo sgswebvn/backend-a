@@ -6,6 +6,8 @@ import { packageMiddleware } from '../middleware/package.middleware';
 const router = Router();
 const fanpageController = new FanpageController();
 
+router.get("/", authMiddleware, fanpageController.getConnectedFanpages.bind(fanpageController));
+router.get("/facebook", authMiddleware, fanpageController.getFacebookPages.bind(fanpageController));
 router.post(
     '/connect',
     authMiddleware,

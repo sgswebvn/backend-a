@@ -5,7 +5,13 @@ import { Comment } from '../models/comment.model';
 import { Fanpage } from '../models/fanpage.model';
 import { Message } from '../models/message.model';
 import { NotificationService } from './notification.service';
-
+export interface Fanpage {
+    pageId: string;
+    name: string;
+    access_token: string;
+    picture?: string;
+    category?: string;
+}
 export class FacebookService {
     private static readonly FB_API_VERSION = 'v23.0';
     private static readonly FB_API_URL = `https://graph.facebook.com/${FacebookService.FB_API_VERSION}`;
@@ -23,6 +29,36 @@ export class FacebookService {
         } catch (error: any) {
             throw new AppError(
                 error.response?.data?.error?.message || 'Failed to get page details',
+                error.response?.status || 500
+            );
+        }
+    }
+
+    static async getUserPages(userAccessToken: string): Promise<Fanpage[]> {
+        try {
+            const response = await axios.get(`${this.FB_API_URL}/me/accounts`, {
+                params: {
+                    access_token: userAccessToken,
+                    fields: "id,name,access_token,category,picture{url}", // Thêm access_token và picture.url
+                },
+            });
+
+            // Chuẩn hóa dữ liệu trả về
+            return response.data.data.map((page: any) => ({
+                pageId: page.id,
+                name: page.name,
+                access_token: page.access_token,
+                category: page.category,
+                picture: page.picture?.data?.url || undefined,
+            }));
+        } catch (error: any) {
+            console.error("Error fetching user pages:", {
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status,
+            });
+            throw new AppError(
+                error.response?.data?.error?.message || "Không thể lấy danh sách fanpage",
                 error.response?.status || 500
             );
         }

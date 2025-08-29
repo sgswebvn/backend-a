@@ -7,6 +7,40 @@ import { FacebookService } from '../services/facebook.service';
 import { AppError } from '../utils/error.util';
 
 export class FanpageController {
+    async getConnectedFanpages(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const fanpages = await Fanpage.find({ userId: req.user?.id, isConnected: true });
+            res.status(200).json({
+                status: 'success',
+                data: fanpages,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+    async getFacebookPages(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const user = await User.findById(req.user?.id);
+            if (!user?.facebookToken) {
+                throw new AppError('Please connect your Facebook account first', 400);
+            }
+
+            const pages = await FacebookService.getUserPages(user.facebookToken);
+            const connectedFanpages = await Fanpage.find({ userId: req.user?.id, isConnected: true });
+
+            // Lọc ra các fanpage chưa được kết nối
+            const availablePages = pages.filter(
+                (page: any) => !connectedFanpages.some((fp) => fp.pageId === page.id)
+            );
+
+            res.status(200).json({
+                status: 'success',
+                data: availablePages,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
     async connectFanpage(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { pageId } = req.body;
