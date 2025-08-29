@@ -1,9 +1,11 @@
 import { Schema, model, Document } from 'mongoose';
 
 export interface IPost extends Document {
+    _id: Schema.Types.ObjectId;
     postId: string;
     fanpageId: Schema.Types.ObjectId;
     content: string;
+    picture?: string;
     attachments: { type: string; url: string }[];
     createdTime: Date;
     updatedTime: Date;
@@ -14,39 +16,43 @@ export interface IPost extends Document {
 
 const postSchema = new Schema<IPost>(
     {
-        likes: Number,
-        shares: Number,
-        commentsCount: Number,
         postId: {
             type: String,
             required: true,
-            unique: true
+            unique: true,
         },
         fanpageId: {
             type: Schema.Types.ObjectId,
             ref: 'Fanpage',
-            required: true
+            required: true,
         },
         content: {
             type: String,
-            required: true
+            required: true,
+        },
+        picture: {
+            type: String,
         },
         attachments: [
             {
                 type: {
                     type: String,
-                    enum: ['photo', 'video', 'link']
+                    enum: ['photo', 'video', 'link'],
                 },
-                url: String
-            }
+                url: String,
+            },
         ],
         createdTime: Date,
-        updatedTime: Date
+        updatedTime: Date,
+        likes: Number,
+        shares: Number,
+        commentsCount: Number,
     },
     {
-        timestamps: true
+        timestamps: true,
     }
-
 );
+
 postSchema.index({ fanpageId: 1, postId: 1 });
+
 export const Post = model<IPost>('Post', postSchema);

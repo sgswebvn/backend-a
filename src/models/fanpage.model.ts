@@ -1,6 +1,7 @@
 import { Schema, model, Document } from 'mongoose';
 
 export interface IFanpage extends Document {
+    _id: Schema.Types.ObjectId;
     pageId: string;
     name: string;
     accessToken: string;
@@ -15,30 +16,30 @@ const fanpageSchema = new Schema<IFanpage>(
         pageId: {
             type: String,
             required: true,
-            unique: true
+            unique: true,
         },
         name: {
             type: String,
-            required: true
+            required: true,
         },
         accessToken: {
             type: String,
-            required: true
+            required: true,
         },
         userId: {
             type: Schema.Types.ObjectId,
             ref: 'User',
-            required: true
+            required: true,
         },
         category: String,
         pictureUrl: String,
         isConnected: {
             type: Boolean,
-            default: true
-        }
+            default: true,
+        },
     },
     {
-        timestamps: true
+        timestamps: true,
     }
 );
 

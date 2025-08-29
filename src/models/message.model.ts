@@ -5,8 +5,10 @@ export interface IMessage extends Document {
     messageId: string;
     fanpageId: Schema.Types.ObjectId;
     conversationId: string;
+    parentId?: string;
     fromId: string;
     fromName: string;
+    fromAvatar?: string;
     message?: string;
     attachments?: {
         type: string;
@@ -21,51 +23,55 @@ const messageSchema = new Schema<IMessage>(
         messageId: {
             type: String,
             required: true,
-            unique: true
+            unique: true,
         },
         fanpageId: {
             type: Schema.Types.ObjectId,
             ref: 'Fanpage',
-            required: true
+            required: true,
         },
         conversationId: {
             type: String,
-            required: true
+            required: true,
+        },
+        parentId: {
+            type: String,
         },
         fromId: {
             type: String,
-            required: true
+            required: true,
         },
         fromName: {
             type: String,
-            required: true
+            required: true,
+        },
+        fromAvatar: {
+            type: String,
         },
         message: String,
         attachments: [
             {
                 type: {
                     type: String,
-                    enum: ['photo', 'video', 'file', 'audio']
+                    enum: ['photo', 'video', 'file', 'audio'],
                 },
-                url: String
-            }
+                url: String,
+            },
         ],
         followed: {
             type: Boolean,
-            default: false
+            default: false,
         },
         createdTime: {
             type: Date,
-            required: true
-        }
+            required: true,
+        },
     },
     {
-        timestamps: true
+        timestamps: true,
     }
-
 );
 
-// Index for faster queries
 messageSchema.index({ conversationId: 1, createdTime: -1 });
 
 export const Message = model<IMessage>('Message', messageSchema);

@@ -1,32 +1,26 @@
-// src/controllers/message.controller.ts
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
-import { Message } from '../models/message.model';
-import { Fanpage } from '../models/fanpage.model';
+import { Message, IMessage } from '../models/message.model';
+import { Fanpage, IFanpage } from '../models/fanpage.model';
 import { AppError } from '../utils/error.util';
 import { FacebookService } from '../services/facebook.service';
 
 class MessageController {
-    // @desc    Get conversation messages
-    // @route   GET /api/messages/:conversationId
-    // @access  Private
     async getMessages(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { conversationId } = req.params;
             const { page = 1, limit = 20 } = req.query;
 
-            // Find fanpage and check ownership
-            const fanpage = await Fanpage.findOne({
+            const fanpage = await Fanpage.findOne<IFanpage>({
                 userId: req.user?.id,
                 'conversations.id': conversationId,
             });
 
             if (!fanpage) {
-                throw new AppError('Conversation not found', 404);
+                throw new AppError('Cuộc hội thoại không tìm thấy', 404);
             }
 
-            // Get messages
-            const messages = await Message.find({ conversationId })
+            const messages = await Message.find<IMessage>({ conversationId })
                 .sort({ createdTime: -1 })
                 .skip((Number(page) - 1) * Number(limit))
                 .limit(Number(limit));
@@ -36,7 +30,10 @@ class MessageController {
             res.status(200).json({
                 status: 'success',
                 data: {
-                    messages,
+                    messages: messages.map((message) => ({
+                        ...message.toObject(),
+                        fromAvatar: message.fromId === fanpage.pageId ? fanpage.pictureUrl || '' : message.fromAvatar || '',
+                    })),
                     pagination: {
                         page: Number(page),
                         limit: Number(limit),
@@ -44,138 +41,182 @@ class MessageController {
                     },
                 },
             });
-        } catch (error) {
+        } catch (error: any) {
+            console.error('Lỗi khi lấy tin nhắn:', {
+                message: error.message,
+                stack: error.stack,
+                conversationId: req.params.conversationId,
+                userId: req.user?.id,
+            });
             next(error);
         }
     }
 
-    // @desc    Send message
-    // @route   POST /api/messages/:conversationId
-    // @access  Private
     async sendMessage(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { conversationId } = req.params;
             const { message, attachments } = req.body;
 
-            // Find fanpage and check ownership
-            const fanpage = await Fanpage.findOne({
+            const fanpage = await Fanpage.findOne<IFanpage>({
                 userId: req.user?.id,
                 'conversations.id': conversationId,
             });
 
             if (!fanpage) {
-                throw new AppError('Conversation not found', 404);
+                throw new AppError('Cuộc hội thoại không tìm thấy', 404);
             }
 
-            // Send message through Facebook
-            const response = await FacebookService.sendMessage(
-                conversationId,
-                message,
-                fanpage.accessToken,
-            );
+            const response = await FacebookService.sendMessage(conversationId, message, fanpage.accessToken);
 
-            // Save message to database
             const newMessage = await Message.create({
                 messageId: response.message_id,
                 fanpageId: fanpage._id,
                 conversationId,
                 fromId: fanpage.pageId,
                 fromName: fanpage.name,
+                fromAvatar: fanpage.pictureUrl || '',
                 message,
                 attachments,
                 createdTime: new Date(),
             });
 
+            const io = (req as any).io;
+            if (io) {
+                io.to(`user_${req.user?.id}`).emit('message:received', {
+                    messageId: newMessage.messageId,
+                    fanpageId: fanpage._id.toString(),
+                    conversationId,
+                    from: newMessage.fromName,
+                    fromAvatar: newMessage.fromAvatar,
+                    message: newMessage.message,
+                    createdTime: newMessage.createdTime,
+                });
+            }
+
             res.status(201).json({
                 status: 'success',
                 data: {
                     message: newMessage,
                 },
             });
-        } catch (error) {
+        } catch (error: any) {
+            console.error('Lỗi khi gửi tin nhắn:', {
+                message: error.message,
+                stack: error.stack,
+                conversationId: req.params.conversationId,
+                userId: req.user?.id,
+            });
             next(error);
         }
     }
 
-    // @desc    Reply to a message
-    // @route   POST /api/messages/reply
-    // @access  Private
     async replyMessage(req: AuthRequest, res: Response, next: NextFunction) {
         try {
-            const { pageId, recipientId, message } = req.body;
+            const { conversationId, messageId } = req.params;
+            const { message } = req.body;
 
-            // Find fanpage and check ownership
-            const fanpage = await Fanpage.findOne({
-                pageId,
+            if (!conversationId || !/^[0-9_]+$/.test(conversationId)) {
+                throw new AppError('conversationId không hợp lệ', 400);
+            }
+
+            if (!messageId || !/^[0-9_]+$/.test(messageId)) {
+                throw new AppError('messageId không hợp lệ', 400);
+            }
+
+            if (!message || typeof message !== 'string') {
+                throw new AppError('Nội dung tin nhắn là bắt buộc', 400);
+            }
+
+            const fanpage = await Fanpage.findOne<IFanpage>({
                 userId: req.user?.id,
-                isConnected: true,
+                'conversations.id': conversationId,
             });
 
             if (!fanpage) {
-                throw new AppError('Fanpage not found or not authorized', 404);
+                throw new AppError('Cuộc hội thoại không tìm thấy', 404);
             }
 
-            // Send message through Facebook
-            const response = await FacebookService.sendMessage(recipientId, message, fanpage.accessToken);
+            const parentMessage = await Message.findOne<IMessage>({ messageId });
+            if (!parentMessage) {
+                throw new AppError('Tin nhắn gốc không tìm thấy', 404);
+            }
 
-            // Save message to database
+            const response = await FacebookService.sendMessage(conversationId, message, fanpage.accessToken);
+
             const newMessage = await Message.create({
                 messageId: response.message_id,
                 fanpageId: fanpage._id,
-                conversationId: recipientId,
+                conversationId,
+                parentId: messageId, // Lưu ID tin nhắn gốc
                 fromId: fanpage.pageId,
                 fromName: fanpage.name,
+                fromAvatar: fanpage.pictureUrl || '',
                 message,
                 createdTime: new Date(),
             });
 
+            const io = (req as any).io;
+            if (io) {
+                io.to(`user_${req.user?.id}`).emit('message:received', {
+                    messageId: newMessage.messageId,
+                    fanpageId: fanpage._id.toString(),
+                    conversationId,
+                    parentId: messageId,
+                    from: newMessage.fromName,
+                    fromAvatar: newMessage.fromAvatar,
+                    message: newMessage.message,
+                    createdTime: newMessage.createdTime,
+                });
+            }
+
             res.status(201).json({
                 status: 'success',
                 data: {
                     message: newMessage,
                 },
             });
-        } catch (error) {
+        } catch (error: any) {
+            console.error('Lỗi khi trả lời tin nhắn:', {
+                message: error.message,
+                stack: error.stack,
+                conversationId: req.params.conversationId,
+                messageId: req.params.messageId,
+                userId: req.user?.id,
+            });
             next(error);
         }
     }
 
-    // @desc    Follow/unfollow a message
-    // @route   POST /api/messages/:msgId/follow
-    // @access  Private
     async followMessage(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { msgId } = req.params;
             const { pageId, followed } = req.body;
 
-            // Find fanpage and check ownership
-            const fanpage = await Fanpage.findOne({
+            const fanpage = await Fanpage.findOne<IFanpage>({
                 pageId,
                 userId: req.user?.id,
                 isConnected: true,
             });
 
             if (!fanpage) {
-                throw new AppError('Fanpage not found or not authorized', 404);
+                throw new AppError('Fanpage không tìm thấy hoặc không được ủy quyền', 404);
             }
 
-            // Find and update message
-            const message = await Message.findOne({
+            const message = await Message.findOne<IMessage>({
                 _id: msgId,
                 fanpageId: fanpage._id,
             });
 
             if (!message) {
-                throw new AppError('Message not found', 404);
+                throw new AppError('Tin nhắn không tìm thấy', 404);
             }
 
             message.followed = followed;
             await message.save();
 
-            // Emit socket event
-            const io = (req as any).io; // Giả định io được gắn vào req từ middleware
+            const io = (req as any).io;
             if (io) {
-                io.to(`user_${req.user?.id}`).emit('fb_message_followed', {
+                io.to(`user_${req.user?.id}`).emit('message:followed', {
                     messageId: msgId,
                     followed,
                 });
@@ -187,7 +228,13 @@ class MessageController {
                     message,
                 },
             });
-        } catch (error) {
+        } catch (error: any) {
+            console.error('Lỗi khi theo dõi tin nhắn:', {
+                message: error.message,
+                stack: error.stack,
+                msgId: req.params.msgId,
+                userId: req.user?.id,
+            });
             next(error);
         }
     }

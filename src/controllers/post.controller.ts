@@ -1,21 +1,21 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
-import { Post } from '../models/post.model';
-import { Fanpage } from '../models/fanpage.model';
+import { Post, IPost } from '../models/post.model';
+import { Fanpage, IFanpage } from '../models/fanpage.model';
 import { FacebookService } from '../services/facebook.service';
 import { AppError } from '../utils/error.util';
 
 export class PostController {
     async getPosts(req: AuthRequest, res: Response, next: NextFunction) {
         try {
-            const { fanpageId } = req.params; // fanpageId là Facebook pageId
+            const { fanpageId } = req.params;
             const { page = 1, limit = 10 } = req.query;
 
             if (!fanpageId || !/^[0-9_]+$/.test(fanpageId)) {
                 throw new AppError('Invalid fanpageId', 400);
             }
 
-            const fanpage = await Fanpage.findOne({
+            const fanpage = await Fanpage.findOne<IFanpage>({
                 pageId: fanpageId,
                 userId: req.user?.id,
                 isConnected: true,
@@ -25,25 +25,50 @@ export class PostController {
                 throw new AppError('Fanpage not found or not authorized', 404);
             }
 
-            let posts = await Post.find({ fanpageId: fanpage._id })
+            let posts = await Post.find<IPost>({ fanpageId: fanpage._id })
                 .sort({ createdTime: -1 })
                 .skip((Number(page) - 1) * Number(limit))
                 .limit(Number(limit));
 
             if (posts.length === 0) {
                 const fbPosts = await FacebookService.getPosts(fanpage.pageId, fanpage.accessToken);
-                const postsToInsert = fbPosts.map((fbPost) => ({
-                    postId: fbPost.id,
-                    fanpageId: fanpage._id,
-                    content: fbPost.message || '',
-                    createdTime: new Date(fbPost.created_time),
-                    updatedTime: new Date(fbPost.updated_time),
-                    likes: fbPost.likes?.summary.total_count || 0,
-                    shares: fbPost.shares?.count || 0,
-                    picture: fbPost.full_picture || '',
+                const bulkOps = fbPosts.map((fbPost) => ({
+                    updateOne: {
+                        filter: { postId: fbPost.id },
+                        update: {
+                            $set: {
+                                fanpageId: fanpage._id,
+                                content: fbPost.message || '',
+                                createdTime: new Date(fbPost.created_time),
+                                updatedTime: new Date(fbPost.updated_time),
+                                likes: fbPost.likes?.summary.total_count || 0,
+                                shares: fbPost.shares?.count || 0,
+                                picture: fbPost.full_picture || '',
+                                commentsCount: fbPost.comments?.summary.total_count || 0,
+                            },
+                        },
+                        upsert: true,
+                    },
                 }));
-                await Post.insertMany(postsToInsert);
-                posts = await Post.find({ fanpageId: fanpage._id })
+                if (bulkOps.length > 0) {
+                    await Post.bulkWrite(bulkOps);
+                    const io = (req as any).io;
+                    if (io) {
+                        io.to(`user_${req.user?.id}`).emit('post:received', {
+                            fanpageId,
+                            posts: fbPosts.map((p: any) => ({
+                                postId: p.id,
+                                content: p.message || '',
+                                createdTime: p.created_time,
+                                picture: p.full_picture || '',
+                                likes: p.likes?.summary.total_count || 0,
+                                shares: p.shares?.count || 0,
+                                commentsCount: p.comments?.summary.total_count || 0,
+                            })),
+                        });
+                    }
+                }
+                posts = await Post.find<IPost>({ fanpageId: fanpage._id })
                     .sort({ createdTime: -1 })
                     .skip((Number(page) - 1) * Number(limit))
                     .limit(Number(limit));
@@ -85,7 +110,7 @@ export class PostController {
                 throw new AppError('Content is required', 400);
             }
 
-            const fanpage = await Fanpage.findOne({
+            const fanpage = await Fanpage.findOne<IFanpage>({
                 pageId: fanpageId,
                 userId: req.user?.id,
                 isConnected: true,
@@ -101,11 +126,26 @@ export class PostController {
                 fanpageId: fanpage._id,
                 content,
                 createdTime: new Date(fbPost.created_time),
-                updatedTime: new Date(fbPost.updated_time),
+                updatedTime: new Date(fbPost.created_time),
                 likes: fbPost.likes?.summary.total_count || 0,
                 shares: fbPost.shares?.count || 0,
                 picture: fbPost.full_picture || '',
+                commentsCount: fbPost.comments?.summary.total_count || 0,
             });
+
+            const io = (req as any).io;
+            if (io) {
+                io.to(`user_${req.user?.id}`).emit('post:received', {
+                    postId: fbPost.id,
+                    fanpageId,
+                    content,
+                    createdTime: fbPost.created_time,
+                    picture: fbPost.full_picture || '',
+                    likes: fbPost.likes?.summary.total_count || 0,
+                    shares: fbPost.shares?.count || 0,
+                    commentsCount: fbPost.comments?.summary.total_count || 0,
+                });
+            }
 
             res.status(201).json({
                 status: 'success',
@@ -135,12 +175,12 @@ export class PostController {
                 throw new AppError('Content is required', 400);
             }
 
-            const post = await Post.findById(postId);
+            const post = await Post.findById<IPost>(postId);
             if (!post) {
                 throw new AppError('Post not found', 404);
             }
 
-            const fanpage = await Fanpage.findById(post.fanpageId);
+            const fanpage = await Fanpage.findById<IFanpage>(post.fanpageId);
             if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
                 throw new AppError('Fanpage not found or not authorized', 401);
             }
@@ -150,6 +190,15 @@ export class PostController {
             post.content = content;
             post.updatedTime = new Date();
             await post.save();
+
+            const io = (req as any).io;
+            if (io) {
+                io.to(`user_${req.user?.id}`).emit('post:updated', {
+                    postId,
+                    content,
+                    updatedTime: post.updatedTime,
+                });
+            }
 
             res.status(200).json({
                 status: 'success',
@@ -174,12 +223,12 @@ export class PostController {
                 throw new AppError('Invalid postId', 400);
             }
 
-            const post = await Post.findById(postId);
+            const post = await Post.findById<IPost>(postId);
             if (!post) {
                 throw new AppError('Post not found', 404);
             }
 
-            const fanpage = await Fanpage.findById(post.fanpageId);
+            const fanpage = await Fanpage.findById<IFanpage>(post.fanpageId);
             if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
                 throw new AppError('Fanpage not found or not authorized', 401);
             }
@@ -187,6 +236,11 @@ export class PostController {
             await FacebookService.deletePost(post.postId, fanpage.accessToken);
 
             await post.deleteOne();
+
+            const io = (req as any).io;
+            if (io) {
+                io.to(`user_${req.user?.id}`).emit('post:deleted', { postId });
+            }
 
             res.status(204).json({
                 status: 'success',

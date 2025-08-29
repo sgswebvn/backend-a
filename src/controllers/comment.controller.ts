@@ -1,32 +1,32 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
-import { Comment } from '../models/comment.model';
-import { Post } from '../models/post.model';
-import { Fanpage } from '../models/fanpage.model';
+import { Comment, IComment } from '../models/comment.model';
+import { Post, IPost } from '../models/post.model';
+import { Fanpage, IFanpage } from '../models/fanpage.model';
 import { AppError } from '../utils/error.util';
 import { FacebookService } from '../services/facebook.service';
 
 class CommentController {
     async getComments(req: AuthRequest, res: Response, next: NextFunction) {
         try {
-            const { postId } = req.params; // postId là Facebook postId
+            const { postId } = req.params;
             const { page = 1, limit = 20 } = req.query;
 
             if (!postId || !/^[0-9_]+$/.test(postId)) {
                 throw new AppError('Invalid postId', 400);
             }
 
-            const post = await Post.findOne({ postId });
+            const post = await Post.findOne<IPost>({ postId });
             if (!post) {
                 throw new AppError('Post not found', 404);
             }
 
-            const fanpage = await Fanpage.findById(post.fanpageId);
+            const fanpage = await Fanpage.findById<IFanpage>(post.fanpageId);
             if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
                 throw new AppError('Not authorized', 401);
             }
 
-            let comments = await Comment.find({ postId: post._id })
+            let comments = await Comment.find<IComment>({ postId: post._id })
                 .sort({ createdTime: -1 })
                 .skip((Number(page) - 1) * Number(limit))
                 .limit(Number(limit));
@@ -44,7 +44,7 @@ class CommentController {
                                 fromId: fbComment.from.id,
                                 fromName: fbComment.from.name,
                                 fromAvatar: fbComment.from.picture?.data?.url || '',
-                                message: fbComment.message,
+                                message: fbComment.message || '',
                                 createdTime: new Date(fbComment.created_time),
                                 isHidden: fbComment.is_hidden || false,
                             },
@@ -54,8 +54,23 @@ class CommentController {
                 }));
                 if (bulkOps.length > 0) {
                     await Comment.bulkWrite(bulkOps);
+                    const io = (req as any).io;
+                    if (io) {
+                        io.to(`user_${req.user?.id}`).emit('comment:received', {
+                            postId,
+                            comments: fbComments.map((c: any) => ({
+                                commentId: c.id,
+                                from: c.from.name,
+                                fromAvatar: c.from.picture?.data?.url || '',
+                                message: c.message,
+                                created_time: c.created_time,
+                                isHidden: c.is_hidden || false,
+                                parentId: c.parent?.id,
+                            })),
+                        });
+                    }
                 }
-                comments = await Comment.find({ postId: post._id })
+                comments = await Comment.find<IComment>({ postId: post._id })
                     .sort({ createdTime: -1 })
                     .skip((Number(page) - 1) * Number(limit))
                     .limit(Number(limit));
@@ -68,7 +83,7 @@ class CommentController {
                 data: {
                     comments: comments.map((comment) => ({
                         ...comment.toObject(),
-                        fromAvatar: comment.fromId === fanpage.pageId ? fanpage.pictureUrl : comment.fromAvatar || '',
+                        fromAvatar: comment.fromId === fanpage.pageId ? fanpage.pictureUrl || '' : comment.fromAvatar || '',
                     })),
                     pagination: {
                         page: Number(page),
@@ -101,12 +116,12 @@ class CommentController {
                 throw new AppError('Message is required', 400);
             }
 
-            const comment = await Comment.findOne({ commentId });
+            const comment = await Comment.findOne<IComment>({ commentId });
             if (!comment) {
                 throw new AppError('Comment not found', 404);
             }
 
-            const fanpage = await Fanpage.findById(comment.fanpageId);
+            const fanpage = await Fanpage.findById<IFanpage>(comment.fanpageId);
             if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
                 throw new AppError('Not authorized', 401);
             }
@@ -129,6 +144,22 @@ class CommentController {
                 createdTime: new Date(reply.created_time),
                 isHidden: false,
             });
+
+            const io = (req as any).io;
+            if (io) {
+                io.to(`user_${req.user?.id}`).emit('comment:received', {
+                    postId: comment.postId,
+                    comments: [{
+                        commentId: reply.id,
+                        from: fanpage.name,
+                        fromAvatar: fanpage.pictureUrl || '',
+                        message: reply.message,
+                        created_time: reply.created_time,
+                        isHidden: false,
+                        parentId: comment.commentId,
+                    }],
+                });
+            }
 
             res.status(201).json({
                 status: 'success',
@@ -160,12 +191,12 @@ class CommentController {
                 throw new AppError('Hidden must be a boolean', 400);
             }
 
-            const comment = await Comment.findOne({ commentId });
+            const comment = await Comment.findOne<IComment>({ commentId });
             if (!comment) {
                 throw new AppError('Comment not found', 404);
             }
 
-            const fanpage = await Fanpage.findById(comment.fanpageId);
+            const fanpage = await Fanpage.findById<IFanpage>(comment.fanpageId);
             if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
                 throw new AppError('Not authorized', 401);
             }
@@ -173,6 +204,14 @@ class CommentController {
             await FacebookService.hideComment(comment.commentId, fanpage.accessToken, hidden);
             comment.isHidden = hidden;
             await comment.save();
+
+            const io = (req as any).io;
+            if (io) {
+                io.to(`user_${req.user?.id}`).emit('comment:updated', {
+                    commentId: comment.commentId,
+                    hidden,
+                });
+            }
 
             res.status(200).json({
                 status: 'success',
