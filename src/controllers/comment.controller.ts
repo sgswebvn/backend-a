@@ -13,17 +13,17 @@ class CommentController {
             const { page = 1, limit = 20 } = req.query;
 
             if (!postId || !/^[0-9_]+$/.test(postId)) {
-                throw new AppError('Invalid postId', 400);
+                throw new AppError('postId không hợp lệ', 400);
             }
 
             const post = await Post.findOne<IPost>({ postId });
             if (!post) {
-                throw new AppError('Post not found', 404);
+                throw new AppError('Bài đăng không tìm thấy', 404);
             }
 
             const fanpage = await Fanpage.findById<IFanpage>(post.fanpageId);
             if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
-                throw new AppError('Not authorized', 401);
+                throw new AppError('Không được ủy quyền', 401);
             }
 
             let comments = await Comment.find<IComment>({ postId: post._id })
@@ -83,7 +83,7 @@ class CommentController {
                 data: {
                     comments: comments.map((comment) => ({
                         ...comment.toObject(),
-                        fromAvatar: comment.fromId === fanpage.pageId ? fanpage.pictureUrl || '' : comment.fromAvatar || '',
+                        fromAvatar: comment.fromId === fanpage.pageId ? fanpage.pictureUrl || 'https://via.placeholder.com/32' : comment.fromAvatar || 'https://via.placeholder.com/32',
                     })),
                     pagination: {
                         page: Number(page),
@@ -93,7 +93,7 @@ class CommentController {
                 },
             });
         } catch (error: any) {
-            console.error('Get comments error:', {
+            console.error('Lỗi khi lấy bình luận:', {
                 message: error.message,
                 stack: error.stack,
                 postId: req.params.postId,
@@ -109,21 +109,21 @@ class CommentController {
             const { message } = req.body;
 
             if (!commentId || !/^[0-9_]+$/.test(commentId)) {
-                throw new AppError('Invalid commentId', 400);
+                throw new AppError('commentId không hợp lệ', 400);
             }
 
             if (!message || typeof message !== 'string') {
-                throw new AppError('Message is required', 400);
+                throw new AppError('Nội dung bình luận là bắt buộc', 400);
             }
 
             const comment = await Comment.findOne<IComment>({ commentId });
             if (!comment) {
-                throw new AppError('Comment not found', 404);
+                throw new AppError('Bình luận không tìm thấy', 404);
             }
 
             const fanpage = await Fanpage.findById<IFanpage>(comment.fanpageId);
             if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
-                throw new AppError('Not authorized', 401);
+                throw new AppError('Không được ủy quyền', 401);
             }
 
             const reply = await FacebookService.replyToComment(
@@ -139,7 +139,7 @@ class CommentController {
                 parentId: comment.commentId,
                 fromId: fanpage.pageId,
                 fromName: fanpage.name,
-                fromAvatar: fanpage.pictureUrl || '',
+                fromAvatar: fanpage.pictureUrl || 'https://via.placeholder.com/32',
                 message: reply.message,
                 createdTime: new Date(reply.created_time),
                 isHidden: false,
@@ -152,7 +152,7 @@ class CommentController {
                     comments: [{
                         commentId: reply.id,
                         from: fanpage.name,
-                        fromAvatar: fanpage.pictureUrl || '',
+                        fromAvatar: fanpage.pictureUrl || 'https://via.placeholder.com/32',
                         message: reply.message,
                         created_time: reply.created_time,
                         isHidden: false,
@@ -168,7 +168,7 @@ class CommentController {
                 },
             });
         } catch (error: any) {
-            console.error('Reply to comment error:', {
+            console.error('Lỗi khi trả lời bình luận:', {
                 message: error.message,
                 stack: error.stack,
                 commentId: req.params.commentId,
@@ -184,21 +184,21 @@ class CommentController {
             const { hidden } = req.body;
 
             if (!commentId || !/^[0-9_]+$/.test(commentId)) {
-                throw new AppError('Invalid commentId', 400);
+                throw new AppError('commentId không hợp lệ', 400);
             }
 
             if (typeof hidden !== 'boolean') {
-                throw new AppError('Hidden must be a boolean', 400);
+                throw new AppError('Hidden phải là giá trị boolean', 400);
             }
 
             const comment = await Comment.findOne<IComment>({ commentId });
             if (!comment) {
-                throw new AppError('Comment not found', 404);
+                throw new AppError('Bình luận không tìm thấy', 404);
             }
 
             const fanpage = await Fanpage.findById<IFanpage>(comment.fanpageId);
             if (!fanpage || fanpage.userId.toString() !== req.user?.id) {
-                throw new AppError('Not authorized', 401);
+                throw new AppError('Không được ủy quyền', 401);
             }
 
             await FacebookService.hideComment(comment.commentId, fanpage.accessToken, hidden);
@@ -218,7 +218,7 @@ class CommentController {
                 data: { comment },
             });
         } catch (error: any) {
-            console.error('Hide comment error:', {
+            console.error('Lỗi khi ẩn bình luận:', {
                 message: error.message,
                 stack: error.stack,
                 commentId: req.params.commentId,
