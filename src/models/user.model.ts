@@ -51,13 +51,11 @@ const userSchema = new Schema<IUser>(
         },
         packageExpiry: Date,
         notificationPreferences: {
-            type: {
-                types: [{
-                    type: String,
-                    enum: ['message', 'comment', 'payment', 'package_expiry']
-                }]
-            },
-            default: { types: ['message', 'comment', 'payment', 'package_expiry'] }
+            types: [{
+                type: String,
+                enum: ['message', 'comment', 'payment', 'package_expiry'],
+                default: ['message', 'comment', 'payment', 'package_expiry']
+            }]
         }
     },
     {
@@ -75,9 +73,9 @@ userSchema.pre('save', async function (next) {
         this.password = await bcrypt.hash(this.password, salt);
         console.log('Password hashed successfully');
         next();
-    } catch (error) {
+    } catch (error: any) {
         console.error('Password hashing error:', error);
-        next();
+        next(error);
     }
 });
 

@@ -6,9 +6,6 @@ import { generateToken } from '../utils/jwt.util';
 import axios, { AxiosError } from 'axios';
 import jwt, { VerifyErrors } from 'jsonwebtoken';
 class AuthController {
-    // @desc    Register user
-    // @route   POST /api/auth/register
-    // @access  Public
     async register(req: Request, res: Response, next: NextFunction) {
         try {
             console.log('Register request received:', req.body);
@@ -32,7 +29,7 @@ class AuthController {
             const user: IUser = await User.create({
                 email,
                 password,
-                name
+                name,
             });
             console.log('Generating token');
             const token = generateToken({
@@ -51,8 +48,16 @@ class AuthController {
                     token
                 }
             });
-        } catch (error) {
-            console.error('Register error:', error);
+        } catch (error: any) {
+            console.error('Register error:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name,
+                errors: error.errors || {}
+            });
+            if (error.name === 'ValidationError') {
+                return next(new AppError(`Validation failed: ${error.message}`, 400));
+            }
             next(error);
         }
     }
