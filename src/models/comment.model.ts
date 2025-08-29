@@ -9,6 +9,7 @@ export interface IComment extends Document {
     fromId: string;
     fromName: string;
     message: string;
+    fromAvatar?: string;
     attachments?: {
         type: string;
         url: string;
@@ -46,6 +47,9 @@ const commentSchema = new Schema<IComment>(
         message: {
             type: String,
             required: true
+        },
+        fromAvatar: {
+            type: String
         },
         attachments: [
             {
